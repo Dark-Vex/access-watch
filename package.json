@@ -46,5 +46,11 @@
     "ignore": [
       "dashboard/static/main.js"
     ]
+  },
+  "now": {
+    "env": {
+      "PORT": "80",
+      "TRUST_PROXY": "loopback, uniquelocal"
+    }
   }
 }

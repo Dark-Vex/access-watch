@@ -20,10 +20,11 @@ app.get('/', (req, res) => res.redirect('/dashboard'))
 app.use('/dashboard', express.static(path.join(__dirname, 'static')))
 
 app.get('/dashboard', (req, res) => {
-  const host = req.hostname
-  const port = app.get('port')
-  const apiBaseUrl = `http://${host}:${port}`
-  const websocket = `ws://${host}:${port}`
+  const host = req.get('host')
+  const scheme = req.protocol
+  const apiBaseUrl = `${scheme}://${host}`
+  const websocketScheme = scheme === 'https' ? 'wss' : 'ws'
+  const websocket = `${websocketScheme}://${host}`
   const index = path.join(__dirname, 'views', 'index.ejs')
   res.render(index, {apiBaseUrl, websocket})
 })

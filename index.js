@@ -10,7 +10,13 @@ const app = require('./lib/app')
 const pipeline = require('./lib/pipeline')
 
 // configure the application
-require('./config')
+if (process.env.CONFIG) {
+  require(process.env.CONFIG)
+} else {
+  require('./config')
+}
+
+// load the dashboard
 require('./dashboard')
 
 // start the application

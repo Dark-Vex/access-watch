@@ -50,6 +50,7 @@
   "now": {
     "env": {
       "PORT": "80",
+      "CONFIG": "./config/now",
       "TRUST_PROXY": "loopback, uniquelocal"
     }
   }

@@ -1,19 +1,33 @@
 const process = require('process')
 
-const metrics = require('./lib/metrics')
-const db = metrics.createDatabase('traffic')
+// create the databases
+const session = require('./lib/session').createDatabase('traffic')
+const metrics = require('./lib/metrics').createDatabase('traffic')
+const rules = require('./lib/rules').createDatabase('traffic', {path: 'rules.json'})
 
+// import the framework
 const app = require('./lib/app')
 const pipeline = require('./lib/pipeline')
 
+// configure the application
 require('./config')
 require('./dashboard')
 
-pipeline.start()
-app.start()
+// start the application
+function start () {
+  pipeline.start()
+  app.start()
+}
 
-process.on('SIGTERM', function () {
+start()
+
+// stop the application
+function stop () {
   pipeline.close()
-  app.close()
-  db.close()
-})
+  rules.close()
+  metrics.close()
+  session.close()
+  process.exit()
+}
+
+process.on('SIGINT', stop)

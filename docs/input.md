@@ -61,10 +61,22 @@ The input accepts the following options.
 
 | Attribute | Type   | Required? | Description                                                |
 | ---       | ---    | ---       | ---                                                        |
-| endpoint  | string | yes       | The endpoint where to listen for logs.                     |
+| path      | string | yes       | The path where to listen for logs.                         |
 | parse     | Parser | yes       | A function to parse the request's body (See Formats below) |
 
 **Note**: The input mounts the configured endpoint to the same web server as Access Watch.
+
+### Elasticsearch
+
+The Elasticsearch input polls logs from an Elasticsearch cluster
+
+The input accepts the following options.
+
+| Attribute | Type   | Required? | Description                                                              |
+| ---       | ---    | ---       | ---                                                                      |
+| config    | object | yes       | The configuration for the [Elasticsearch client](https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/configuration.html).                                            |
+| query     | object | yes       | The [Elasticsearch search query](https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/api-reference.html#api-search)                                                       |
+| parse     | Parser | yes       | A function to parse the messages (See Formats below)      |
 
 ### AMQP
 
@@ -78,6 +90,19 @@ The input accepts the following options.
 | exchange  | string | yes       | The name of the exchange.                                                |
 | exchange  | Map    | yes       | The name of the queue.                                                   |
 | parse     | Parser | yes       | A function to parse the messages from the queue (See Formats below)      |
+
+### WebSocket
+
+The WebSocket input subscribe to a WebSocket server sending access logs.
+
+The input accepts the following options.
+
+| Attribute | Type   | Required?                 | Description                                                         |
+| ---       | ---    | ---                       | ---                                                                 |
+| type      | string | yes                       | Either 'client' or 'server' (default to 'client')                   |
+| address   | string | yes (if type is 'client') | The WebSocket address to connect to (e.g. 'wss://localhost:3000')   |
+| path      | string | yes (if type is 'server') | The path where to listen for logs                                   |
+| parse     | Parser | yes                       | A function to parse the messages from the queue (See Formats below) |
 
 ## Formats
 
@@ -114,7 +139,7 @@ The JSON log parser parses access log in JSON that match the following schema.
   "properties": {
     "request": {
       "type": "object",
-      "required": ["time", "address", "scheme", "method", "url", "headers"],
+      "required": ["time", "address", "method", "url", "headers"],
       "properties": {
         "time": {
           "type": "string"

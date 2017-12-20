@@ -1,10 +1,18 @@
 // import the framework
 const app = require('./lib/app')
+const api = require('./lib/api')
 const pipeline = require('./lib/pipeline')
 const database = require('./lib/database')
+const dashboard = require('./dashboard')
 
-// configure the application
+// load the configuration
 require('./config')
+
+// load the API
+app.use(api)
+
+// load the Dashboard
+app.use(dashboard)
 
 // start the application
 function start () {

@@ -21,3 +21,14 @@ function stop () {
 start()
 
 process.on('SIGINT', stop)
+
+// Report Memory Usage
+
+const statsd = require('./lib/statsd')
+
+setInterval(() => {
+  const memoryUsage = process.memoryUsage()
+  Object.keys(memoryUsage).forEach(key => {
+    statsd.set(`process.memory.${key}`, memoryUsage[key])
+  })
+}, 1000)

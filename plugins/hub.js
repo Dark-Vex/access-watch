@@ -8,6 +8,8 @@ const { Map, fromJS, is } = require('immutable')
 
 const { signature } = require('access-watch-sdk')
 
+const statsd = require('../lib/statsd')
+
 const { selectKeys } = require('../lib/util')
 
 const client = axios.create({
@@ -92,8 +94,15 @@ function fetchIdentityBatch () {
 
   const requestIdentities = batch.map(batchEntry => batchEntry.identity)
 
+  statsd.set('hub.identities.request.length', requestIdentities.length)
+  statsd.increment('hub.identities.request.total', requestIdentities.length)
+
+  const start = process.hrtime()
+
   getIdentities(requestIdentities)
     .then(responseIdentities => {
+      statsd.timing('hub.identities.response', process.hrtime(start)[1] / 1000000)
+
       if (batch.length !== responseIdentities.length) {
         throw new Error('Length mismatch')
       }

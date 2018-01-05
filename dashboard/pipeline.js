@@ -7,6 +7,9 @@ const reducers = require('../lib/reducers')
 const session = require('../lib/session').connect('aw:file://sessions')
 const rules = require('../lib/rules').connect('aw:file://rules')
 const { FixedWindow } = require('../lib/window')
+const { now } = require('../lib/util')
+
+const statsd = require('../lib/statsd')
 
 const hub = require('../plugins/hub')
 const proxy = require('../plugins/proxy')
@@ -115,6 +118,11 @@ stream.map(log => rules.match(log))
 // Post-Processing for Websocket logs
 
 stream = stream
+  // In
+  .map(log => {
+    statsd.increment('dashboard.pipeline.in')
+    return log
+  })
   // Filter logs without identity
   .filter(log => log.hasIn(['identity', 'id']))
   // Set a UUID if no one is defined
@@ -168,6 +176,12 @@ stream = stream
 
 // Output to the console as JS object
 // stream.map(log => console.log(log.toJS()))
+  // Out
+  .map(log => {
+    statsd.increment('dashboard.pipeline.out')
+    statsd.set('dashboard.pipeline.out.delta', Math.floor(new Date(log.get('time')).getTime() / 1000) - now())
+    return log
+  })
 
 module.exports = {
   stream

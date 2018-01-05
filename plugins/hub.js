@@ -18,7 +18,7 @@ const client = axios.create({
   headers: {'User-Agent': 'Access Watch Hub Plugin'}
 })
 
-const cache = new LRUCache({size: 10000, maxAge: 3600 * 1000})
+const cache = new LRUCache({max: 1000, maxAge: 60 * 1000})
 
 let buffer = {}
 
@@ -48,6 +48,8 @@ function augment (log) {
 }
 
 function fetchIdentity (identity) {
+  statsd.set(`hub.cache.itemCount`, cache.itemCount)
+  statsd.set(`hub.cache.length`, cache.length)
   let key = cacheKey(identity)
   if (cache.has(key)) {
     return Promise.resolve(cache.get(key))
@@ -101,6 +103,7 @@ function fetchIdentityBatch () {
 
   getIdentities(requestIdentities)
     .then(responseIdentities => {
+      statsd.increment('hub.identities.response.success')
       statsd.timing('hub.identities.response', process.hrtime(start)[1] / 1000000)
 
       if (batch.length !== responseIdentities.length) {
@@ -115,6 +118,8 @@ function fetchIdentityBatch () {
       })
     })
     .catch(() => {
+      statsd.increment('hub.identities.response.exception')
+      statsd.timing('hub.identities.response', process.hrtime(start)[1] / 1000000)
       // Resolving all the requests with an empty response
       batch.forEach(batchEntry => {
         batchEntry.promises.forEach(({resolve}) => {

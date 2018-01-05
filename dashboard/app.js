@@ -4,6 +4,8 @@ const uuid = require('uuid/v4')
 const { Map } = require('immutable')
 
 const app = require('../lib/app')
+const statsd = require('../lib/statsd')
+
 const { stream } = require('./pipeline')
 
 /* Dashboard and Assets */
@@ -33,8 +35,10 @@ function websocket (endpoint, stream) {
   })
 
   stream.map(log => {
+    statsd.increment('dashboard.pipeline.websocket')
     clients.forEach(client => {
       if (client.readyState === 1 /* === WebSocket.OPEN */) {
+        statsd.increment('dashboard.pipeline.websocket.send')
         client.send(JSON.stringify(log))
       }
     })

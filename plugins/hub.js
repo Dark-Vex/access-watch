@@ -18,7 +18,7 @@ const client = axios.create({
   headers: {'User-Agent': 'Access Watch Hub Plugin'}
 })
 
-const cache = new LRUCache({size: 10000, maxAge: 3600 * 1000})
+const cache = new LRUCache({max: 1000, maxAge: 60 * 1000})
 
 let buffer = {}
 
@@ -48,6 +48,8 @@ function augment (log) {
 }
 
 function fetchIdentity (identity) {
+  statsd.set(`hub.cache.itemCount`, cache.itemCount)
+  statsd.set(`hub.cache.length`, cache.length)
   let key = cacheKey(identity)
   if (cache.has(key)) {
     return Promise.resolve(cache.get(key))

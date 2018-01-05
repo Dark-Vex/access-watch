@@ -37,8 +37,8 @@ function websocket (endpoint, stream) {
   stream.map(log => {
     statsd.increment('dashboard.pipeline.websocket')
     clients.forEach(client => {
-      statsd.increment('dashboard.pipeline.websocket.send')
       if (client.readyState === 1 /* === WebSocket.OPEN */) {
+        statsd.increment('dashboard.pipeline.websocket.send')
         client.send(JSON.stringify(log))
       }
     })

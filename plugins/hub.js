@@ -18,7 +18,7 @@ const client = axios.create({
   headers: {'User-Agent': 'Access Watch Hub Plugin'}
 })
 
-const cache = new LRUCache({max: 1000, maxAge: 60 * 1000})
+const cache = new LRUCache({max: 10000, maxAge: 3600 * 1000})
 
 let buffer = {}
 
@@ -29,7 +29,7 @@ function augment (log) {
   activityFeedback(log)
   // Fetch identity and augment log (promise based)
   return fetchIdentity(Map({
-    address: log.getIn(['address', 'value']),
+    address: log.getIn(['address', 'value'], log.getIn(['request', 'address'])),
     headers: log.getIn(['request', 'headers']),
     captured_headers: log.getIn(['request', 'captured_headers'])
   })).then(identity => {
@@ -174,7 +174,7 @@ function activityFeedback (log) {
   let identityId = log.getIn(['identity', 'id'])
   if (!identityId) {
     identityId = signature.getIdentityId({
-      address: log.getIn(['address', 'value']),
+      address: log.getIn(['address', 'value'], log.getIn(['request', 'address'])),
       headers: log.getIn(['request', 'headers']).toJS()
     })
   }

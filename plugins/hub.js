@@ -107,7 +107,7 @@ function fetchIdentityBatch () {
         throw new Error('Length mismatch')
       }
       statsd.increment('hub.identities.response.success')
-      statsd.timing('hub.identities.response', process.hrtime(start)[1] / 1000000)
+      statsd.timing('hub.identities.response.success', process.hrtime(start)[1] / 1000000)
       batch.forEach((batchEntry, i) => {
         const identityMap = fromJS(responseIdentities[i])
         cache.set(batchEntry.key, identityMap)
@@ -118,7 +118,7 @@ function fetchIdentityBatch () {
     })
     .catch(() => {
       statsd.increment('hub.identities.response.exception')
-      statsd.timing('hub.identities.response', process.hrtime(start)[1] / 1000000)
+      statsd.timing('hub.identities.response.exception', process.hrtime(start)[1] / 1000000)
       // Resolving all the requests with an empty response
       batch.forEach(batchEntry => {
         batchEntry.promises.forEach(({resolve}) => {
@@ -215,7 +215,7 @@ function batchIdentityFeedback () {
           throw new TypeError('Response identities not an array')
         }
         statsd.increment('hub.activity.response.success')
-        statsd.timing('hub.activity.response', process.hrtime(start)[1] / 1000000)
+        statsd.timing('hub.activity.response.success', process.hrtime(start)[1] / 1000000)
         response.data.identities.forEach(identity => {
           const identityMap = fromJS(identity)
           const cachedMap = cache.get(identity.id)
@@ -226,7 +226,7 @@ function batchIdentityFeedback () {
       })
       .catch(err => {
         statsd.increment('hub.activity.response.exception')
-        statsd.timing('hub.activity.response', process.hrtime(start)[1] / 1000000)
+        statsd.timing('hub.activity.response.exception', process.hrtime(start)[1] / 1000000)
         console.log('activity feedback', err)
       })
   }

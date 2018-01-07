@@ -103,12 +103,11 @@ function fetchIdentityBatch () {
 
   getIdentities(requestIdentities)
     .then(responseIdentities => {
-      statsd.increment('hub.identities.response.success')
-      statsd.timing('hub.identities.response', process.hrtime(start)[1] / 1000000)
-
       if (batch.length !== responseIdentities.length) {
         throw new Error('Length mismatch')
       }
+      statsd.increment('hub.identities.response.success')
+      statsd.timing('hub.identities.response', process.hrtime(start)[1] / 1000000)
       batch.forEach((batchEntry, i) => {
         const identityMap = fromJS(responseIdentities[i])
         cache.set(batchEntry.key, identityMap)
@@ -203,6 +202,9 @@ function batchIdentityFeedback () {
   if (activityBuffer.size > 0) {
     const activity = activityBuffer.toJS()
     activityBuffer = activityBuffer.clear()
+
+    const start = process.hrtime()
+
     client
       .post('/activity', {activity})
       .then(response => {
@@ -212,6 +214,8 @@ function batchIdentityFeedback () {
         if (!response.data.identities || !Array.isArray(response.data.identities)) {
           throw new TypeError('Response identities not an array')
         }
+        statsd.increment('hub.activity.response.success')
+        statsd.timing('hub.activity.response', process.hrtime(start)[1] / 1000000)
         response.data.identities.forEach(identity => {
           const identityMap = fromJS(identity)
           const cachedMap = cache.get(identity.id)
@@ -221,6 +225,8 @@ function batchIdentityFeedback () {
         })
       })
       .catch(err => {
+        statsd.increment('hub.activity.response.exception')
+        statsd.timing('hub.activity.response', process.hrtime(start)[1] / 1000000)
         console.log('activity feedback', err)
       })
   }

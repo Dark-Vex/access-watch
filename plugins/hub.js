@@ -20,10 +20,6 @@ const client = axios.create({
 
 const cache = new LRUCache(config.hub.cache)
 
-const identityBuffer = {}
-
-const identityRequests = {}
-
 function augment (log) {
   // Share activity metrics and get updates
   activityFeedback(log)
@@ -47,76 +43,63 @@ function augment (log) {
   })
 }
 
-function fetchIdentity (identity) {
-  let key = cacheKey(identity)
+const cacheFetchFactory = cache => ({ cacheKeyFn, fetchFn }) => item => {
+  const key = cacheKeyFn(item)
   if (cache.has(key)) {
     return Promise.resolve(cache.get(key))
-  } else {
-    return fetchIdentityPromise(key, identity)
   }
+  return fetchFn(key, item)
 }
 
-function cacheKey (identity) {
-  return signature.getIdentityId(identity.toJS())
-}
-
-function fetchIdentityPromise (key, identity) {
-  return new Promise((resolve, reject) => {
-    const identityBufferCount = Object.keys(identityBuffer).length
-    if (identityBufferCount >= 25) {
-      console.log('Identity buffer full. Skipping.', identityBufferCount)
+const withMaxConcurrentRequests = ({ maxConcurrentRequests, fetchFn, name }) => {
+  const currentRequests = {}
+  return (...args) => new Promise((resolve, reject) => {
+    if (Object.keys(currentRequests).length >= maxConcurrentRequests) {
+      console.log(`Max concurrent requests for ${name} batch. Skipping.`)
       resolve()
       return
     }
-    if (!identityBuffer[key]) {
-      identityBuffer[key] = { identity, promises: [] }
-    }
-    identityBuffer[key].promises.push({ resolve, reject })
+    const requestId = uuid()
+    currentRequests[requestId] = fetchFn(...args)
+      .then(r => {
+        delete currentRequests[requestId]
+        return r
+      })
+      .catch(err => {
+        delete currentRequests[requestId]
+        throw err
+      })
   })
 }
 
-function batchIdentityFetch () {
-  const countCurrentRequests = Object.keys(identityRequests).length
-  if (countCurrentRequests >= config.hub.identity.maxConcurrentRequests) {
-    console.log('Max concurrent requests for identity batch. Skipping.')
-    return
-  }
-
-  let batch = []
-
-  // Move entries from the buffer to the batch
-  Object.keys(identityBuffer).forEach(key => {
-    batch.push(Object.assign({ key }, identityBuffer[key]))
-    delete identityBuffer[key]
+function batchFetch ({ cache, name, batchRequests, buffer, fetchFn }) {
+  const batch = Object.keys(buffer).map(key => {
+    delete buffer[key]
+    return {
+      key,
+      ...buffer[key]
+    }
   })
 
-  if (batch.length === 0) {
-    return
+  if (batch.length > 0) {
+    return Promise.resolve()
   }
 
-  const requestIdentities = batch.map(batchEntry => batchEntry.identity)
-
-  const requestId = uuid()
-
-  identityRequests[requestId] = getIdentities(requestIdentities)
-    .then(responseIdentities => {
-      if (batch.length !== responseIdentities.length) {
-        throw new Error('Length mismatch')
+  return fetchFn(batch)
+    .then(response => {
+      if (batch.length !== response.length) {
+        throw new Error(`${name}: batch requests length mismatch`)
       }
-      // Releasing concurrent requests count
-      delete identityRequests[requestId]
       batch.forEach((batchEntry, i) => {
-        const identityMap = fromJS(responseIdentities[i])
-        cache.set(batchEntry.key, identityMap)
+        const map = fromJS(response[i])
+        cache.set(batchEntry.key, map)
         batchEntry.promises.forEach(({ resolve }) => {
-          resolve(identityMap.size ? identityMap : null)
+          resolve(map.size ? map : null)
         })
       })
     })
     .catch(err => {
-      console.error('identities', err)
-      // Releasing concurrent requests count
-      delete identityRequests[requestId]
+      console.error(name, err)
       // Resolving all the requests with an empty response
       batch.forEach(batchEntry => {
         batchEntry.promises.forEach(({ resolve }) => {
@@ -125,6 +108,43 @@ function batchIdentityFetch () {
       })
     })
 }
+
+const batchFetchFactory = ({ maxConcurrentRequests, name, fetchFn, interval, maxBuffer = 25 }) => {
+  const buffer = {}
+  const batchRequests = {}
+  const thisBatchFetch = withMaxConcurrentRequests({
+    maxConcurrentRequests,
+    name,
+    fetchFn: batchFetch.bind(null, { name, fetchFn, batchRequests, buffer })
+  })
+  setInterval(thisBatchFetch, interval)
+  return (key, item) => new Promise((resolve, reject) => {
+    const bufferSize = Object.keys(buffer).length
+    if (bufferSize >= maxBuffer) {
+      console.log(`${name} buffer full. Skipping.`, bufferSize)
+      resolve()
+      return
+    }
+    if (!buffer[key]) {
+      buffer[key] = { [name]: item, promises: [] }
+    }
+    buffer[key].promises.push({ resolve, reject })
+  })
+}
+
+const cacheFetch = cacheFetchFactory(cache)
+
+const identityBatchFetch = batchFetchFactory({
+  maxConcurrentRequests: config.hub.identity.maxConcurrentRequests,
+  interval: config.hub.identity.batchInterval,
+  name: 'identity',
+  fetchFn: items => getIdentities(items.map(({ identity }) => identity))
+})
+
+const fetchIdentity = cacheFetch({
+  cacheKeyFn: identity => signature.getIdentityId(identity.toJS()),
+  fetchFn: identityBatchFetch
+})
 
 function getIdentities (identities) {
   return client
@@ -141,8 +161,6 @@ function getIdentities (identities) {
 }
 
 let activityBuffer = Map()
-
-const activityRequests = {}
 
 const types = {
   '/robots.txt': 'robot',
@@ -206,21 +224,13 @@ function activityFeedback (log) {
 
 function batchActivityFeedback () {
   if (activityBuffer.size === 0) {
-    return
-  }
-
-  const countCurrentRequests = Object.keys(activityRequests).length
-  if (countCurrentRequests >= config.hub.activity.maxConcurrentRequests) {
-    console.log('Max concurrent requests for activity feedback. Skipping.')
-    return
+    return Promise.resolve()
   }
 
   const activity = activityBuffer.toJS()
   activityBuffer = activityBuffer.clear()
 
-  const requestId = uuid()
-
-  activityRequests[requestId] = client
+  return client
     .post('/activity', { activity })
     .then(response => {
       if (typeof response.data !== 'object') {
@@ -230,8 +240,6 @@ function batchActivityFeedback () {
       ) {
         throw new TypeError('Response identities not an array')
       }
-      // Releasing concurrent requests count
-      delete activityRequests[requestId]
       response.data.identities.forEach(identity => {
         const identityMap = fromJS(identity)
         const cachedMap = cache.get(identity.id)
@@ -242,14 +250,14 @@ function batchActivityFeedback () {
     })
     .catch(err => {
       console.error('activity feedback', err)
-      // Releasing concurrent requests count
-      delete activityRequests[requestId]
     })
 }
 
-setInterval(batchIdentityFetch, config.hub.identity.batchInterval)
-
-setInterval(batchActivityFeedback, config.hub.activity.batchInterval)
+setInterval(withMaxConcurrentRequests({
+  maxConcurrentRequests: config.hub.activity.maxConcurrentRequests,
+  name: 'activity',
+  fetchFn: batchActivityFeedback
+}), config.hub.activity.batchInterval)
 
 module.exports = {
   augment

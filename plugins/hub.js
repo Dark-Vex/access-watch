@@ -21,9 +21,9 @@ const client = axios.create({
 
 const cache = new LRUCache({max: 10000, maxAge: 3600 * 1000})
 
-let identityBuffer = {}
+const identityBuffer = {}
 
-let identityRequests = {}
+const identityRequests = {}
 
 const identityMaxConcurrentRequests = 2
 
@@ -67,8 +67,9 @@ function cacheKey (identity) {
 
 function fetchIdentityPromise (key, identity) {
   return new Promise((resolve, reject) => {
-    if (Object.keys(identityBuffer).length >= 100) {
-      console.log('Buffer Full. Skipping augmentation.')
+    const identityBufferCount = Object.keys(identityBuffer).length
+    if (identityBufferCount >= 25) {
+      console.log('Identity buffer full. Skipping.', identityBufferCount)
       resolve()
       return
     }
@@ -156,7 +157,7 @@ function getIdentities (identities) {
 
 let activityBuffer = Map()
 
-let activityRequests = {}
+const activityRequests = {}
 
 const activityMaxConcurrentRequests = 2
 
@@ -185,9 +186,9 @@ function detectType (url) {
 }
 
 function activityFeedback (log) {
-  if (Object.keys(activityBuffer).length >= 100) {
-    console.log('Activity feedback buffer full. Skipping.')
-    return
+  const activityBufferCount = activityBuffer.size
+  if (activityBufferCount >= 100) {
+    console.log('Activity feedback buffer full. Skipping.', activityBufferCount)
   }
 
   // Get identity id
@@ -227,7 +228,6 @@ function batchIdentityFeedback () {
   const countCurrentRequests = Object.keys(activityRequests).length
   if (countCurrentRequests >= activityMaxConcurrentRequests) {
     console.log('Max concurrent requests for activity feedback batch. Skipping.')
-    return
   }
 
   const activity = activityBuffer.toJS()
@@ -250,7 +250,6 @@ function batchIdentityFeedback () {
       // Stats
       statsd.increment('hub.activity.response.success')
       statsd.timing('hub.activity.response.success', process.hrtime(start)[1] / 1000000)
-
       response.data.identities.forEach(identity => {
         const identityMap = fromJS(identity)
         const cachedMap = cache.get(identity.id)
@@ -262,7 +261,6 @@ function batchIdentityFeedback () {
     .catch(err => {
       console.error('activity feedback', err)
       // Releasing concurrent requests count
-      delete activityRequests[requestId]
       // Stats
       statsd.increment('hub.activity.response.exception')
       statsd.timing('hub.activity.response.exception', process.hrtime(start)[1] / 1000000)

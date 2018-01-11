@@ -30,9 +30,9 @@ const lag = require('event-loop-lag')(1000);
 const statsd = require('./lib/statsd');
 
 setInterval(() => {
-  statsd.set(`loop.lag`, lag())
-  const memoryUsage = process.memoryUsage()
+  statsd.set(`loop.lag`, lag());
+  const memoryUsage = process.memoryUsage();
   Object.keys(memoryUsage).forEach(key => {
-    statsd.set(`process.memory.${key}`, memoryUsage[key])
-  })
+    statsd.set(`process.memory.${key}`, memoryUsage[key]);
+  });
 }, 1000);

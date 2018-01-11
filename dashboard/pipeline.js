@@ -6,8 +6,8 @@ const reducers = require('../lib/reducers');
 const session = require('../lib/session').connect('aw:file://sessions');
 const rules = require('../lib/rules').connect('aw:file://rules');
 const { FixedWindow } = require('../lib/window');
-const { now } = require('../lib/util')
-const statsd = require('../lib/statsd')
+const { now } = require('../lib/util');
+const statsd = require('../lib/statsd');
 
 const hub = require('../plugins/hub');
 const proxy = require('../plugins/proxy');
@@ -129,8 +129,8 @@ stream.map(log => rules.match(log));
 stream = stream
   // In
   .map(log => {
-    statsd.increment('dashboard.pipeline.in')
-    return log
+    statsd.increment('dashboard.pipeline.in');
+    return log;
   })
   // Filter logs without identity
   .filter(log => log.hasIn(['identity', 'id']))
@@ -169,16 +169,20 @@ stream = stream
       log = log.setIn(['session', 'id'], log.getIn(['identity', 'id']));
     }
     return log;
-  });
+  })
 
-// Output to the console as JS object
-// stream.map(log => console.log(log.toJS()))
+  // Output to the console as JS object
+  // stream.map(log => console.log(log.toJS()))
+
   // Out
   .map(log => {
-    statsd.increment('dashboard.pipeline.out')
-    statsd.set('dashboard.pipeline.out.delta', Math.floor(new Date(log.get('time')).getTime() / 1000) - now())
-    return log
-  })
+    statsd.increment('dashboard.pipeline.out');
+    statsd.set(
+      'dashboard.pipeline.out.delta',
+      Math.floor(new Date(log.get('time')).getTime() / 1000) - now()
+    );
+    return log;
+  });
 
 module.exports = {
   stream,

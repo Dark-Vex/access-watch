@@ -53,7 +53,6 @@ function augment(log) {
   });
 }
 
-
 function fetchIdentity(identity) {
   statsd.set(`hub.cache.itemCount`, cache.itemCount);
   statsd.set(`hub.cache.length`, cache.length);
@@ -120,7 +119,10 @@ function batchIdentityFetch() {
       delete identityRequests[requestId];
       // Stats
       statsd.increment('hub.identities.response.success');
-      statsd.timing('hub.identities.response.success', process.hrtime(start)[1] / 1000000);
+      statsd.timing(
+        'hub.identities.response.success',
+        process.hrtime(start)[1] / 1000000
+      );
       batch.forEach((batchEntry, i) => {
         const identityMap = fromJS(responseIdentities[i]);
         cache.set(batchEntry.key, identityMap);
@@ -135,7 +137,10 @@ function batchIdentityFetch() {
       delete identityRequests[requestId];
       // Stats
       statsd.increment('hub.identities.response.exception');
-      statsd.timing('hub.identities.response.exception', process.hrtime(start)[1] / 1000000);
+      statsd.timing(
+        'hub.identities.response.exception',
+        process.hrtime(start)[1] / 1000000
+      );
       // Resolving all the requests with an empty response
       batch.forEach(batchEntry => {
         batchEntry.promises.forEach(({ resolve }) => {
@@ -264,7 +269,10 @@ function batchActivityFeedback() {
       delete activityRequests[requestId];
       // Stats
       statsd.increment('hub.activity.response.success');
-      statsd.timing('hub.activity.response.success', process.hrtime(start)[1] / 1000000);
+      statsd.timing(
+        'hub.activity.response.success',
+        process.hrtime(start)[1] / 1000000
+      );
       response.data.identities.forEach(identity => {
         const identityMap = fromJS(identity);
         const cachedMap = cache.get(identity.id);
@@ -279,7 +287,10 @@ function batchActivityFeedback() {
       delete activityRequests[requestId];
       // Stats
       statsd.increment('hub.activity.response.exception');
-      statsd.timing('hub.activity.response.exception', process.hrtime(start)[1] / 1000000);
+      statsd.timing(
+        'hub.activity.response.exception',
+        process.hrtime(start)[1] / 1000000
+      );
     });
 }
 

@@ -2,164 +2,164 @@
 // Plugin to discuss with the Access Watch Hub
 //
 
-const LRUCache = require('lru-cache')
-const axios = require('axios')
-const uuid = require('uuid/v4')
-const { Map, fromJS, is } = require('immutable')
+const LRUCache = require('lru-cache');
+const axios = require('axios');
+const uuid = require('uuid/v4');
+const { Map, fromJS, is } = require('immutable');
 
-const { signature } = require('access-watch-sdk')
+const { signature } = require('access-watch-sdk');
 
-const statsd = require('../lib/statsd')
-
-const { selectKeys } = require('../lib/util')
+const statsd = require('../lib/statsd');
+const { selectKeys } = require('../lib/util');
+const config = require('../config/constants');
 
 const client = axios.create({
   baseURL: 'https://api.access.watch/1.2/hub',
-  timeout: 2000,
-  headers: {'User-Agent': 'Access Watch Hub Plugin'}
-})
+  timeout: config.hub.timeout,
+  headers: { 'User-Agent': 'Access Watch Hub Plugin' },
+});
 
-const cache = new LRUCache({max: 10000, maxAge: 3600 * 1000})
+const cache = new LRUCache(config.hub.cache);
 
-const identityBuffer = {}
+const identityBuffer = {};
 
-const identityRequests = {}
+const identityRequests = {};
 
-const identityMaxConcurrentRequests = 2
-
-function augment (log) {
+function augment(log) {
   // Share activity metrics and get updates
-  activityFeedback(log)
+  activityFeedback(log);
   // Fetch identity and augment log (promise based)
-  return fetchIdentity(Map({
-    address: log.getIn(['address', 'value'], log.getIn(['request', 'address'])),
-    headers: log.getIn(['request', 'headers']),
-    captured_headers: log.getIn(['request', 'captured_headers'])
-  })).then(identity => {
+  return fetchIdentity(
+    Map({
+      address: log.getIn(
+        ['address', 'value'],
+        log.getIn(['request', 'address'])
+      ),
+      headers: log.getIn(['request', 'headers']),
+      captured_headers: log.getIn(['request', 'captured_headers']),
+    })
+  ).then(identity => {
     if (identity) {
       // Add identity properties
-      log = log.set('identity', selectKeys(identity, ['id', 'type', 'label']))
+      log = log.set('identity', selectKeys(identity, ['id', 'type', 'label']));
       // Add identity objects
-      ;['address', 'user_agent', 'robot', 'reputation'].forEach(key => {
+      ['address', 'user_agent', 'robot', 'reputation'].forEach(key => {
         if (identity.has(key)) {
-          log = log.set(key, identity.get(key))
+          log = log.set(key, identity.get(key));
         }
-      })
+      });
     }
-    return log
-  })
+    return log;
+  });
 }
 
-function fetchIdentity (identity) {
-  statsd.set(`hub.cache.itemCount`, cache.itemCount)
-  statsd.set(`hub.cache.length`, cache.length)
-  let key = cacheKey(identity)
+
+function fetchIdentity(identity) {
+  statsd.set(`hub.cache.itemCount`, cache.itemCount);
+  statsd.set(`hub.cache.length`, cache.length);
+  let key = cacheKey(identity);
   if (cache.has(key)) {
-    return Promise.resolve(cache.get(key))
+    return Promise.resolve(cache.get(key));
   } else {
-    return fetchIdentityPromise(key, identity)
+    return fetchIdentityPromise(key, identity);
   }
 }
 
-function cacheKey (identity) {
-  return signature.getIdentityId(identity.toJS())
+function cacheKey(identity) {
+  return signature.getIdentityId(identity.toJS());
 }
 
-function fetchIdentityPromise (key, identity) {
+function fetchIdentityPromise(key, identity) {
   return new Promise((resolve, reject) => {
-    const identityBufferCount = Object.keys(identityBuffer).length
+    const identityBufferCount = Object.keys(identityBuffer).length;
     if (identityBufferCount >= 25) {
-      console.log('Identity buffer full. Skipping.', identityBufferCount)
-      resolve()
-      return
+      console.log('Identity buffer full. Skipping.', identityBufferCount);
+      resolve();
+      return;
     }
     if (!identityBuffer[key]) {
-      identityBuffer[key] = {identity, promises: []}
+      identityBuffer[key] = { identity, promises: [] };
     }
-    identityBuffer[key].promises.push({resolve, reject})
-  })
+    identityBuffer[key].promises.push({ resolve, reject });
+  });
 }
 
-function batchIdentityFetch () {
-  const countCurrentRequests = Object.keys(identityRequests).length
-  if (countCurrentRequests >= identityMaxConcurrentRequests) {
-    console.log('Max concurrent requests for identity batch. Skipping.')
-    return
+function batchIdentityFetch() {
+  const countCurrentRequests = Object.keys(identityRequests).length;
+  if (countCurrentRequests >= config.hub.identity.maxConcurrentRequests) {
+    console.log('Max concurrent requests for identity batch. Skipping.');
+    return;
   }
 
-  let batch = []
+  let batch = [];
 
   // Move entries from the buffer to the batch
   Object.keys(identityBuffer).forEach(key => {
-    batch.push(Object.assign({key}, identityBuffer[key]))
-    delete identityBuffer[key]
-  })
+    batch.push(Object.assign({ key }, identityBuffer[key]));
+    delete identityBuffer[key];
+  });
 
   if (batch.length === 0) {
-    return
+    return;
   }
 
-  const requestIdentities = batch.map(batchEntry => batchEntry.identity)
+  const requestIdentities = batch.map(batchEntry => batchEntry.identity);
 
-  statsd.set('hub.identities.request.length', requestIdentities.length)
-  statsd.increment('hub.identities.request.total', requestIdentities.length)
+  statsd.set('hub.identities.request.length', requestIdentities.length);
+  statsd.increment('hub.identities.request.total', requestIdentities.length);
 
-  const requestId = uuid()
-  const start = process.hrtime()
+  const requestId = uuid();
+  const start = process.hrtime();
 
   identityRequests[requestId] = getIdentities(requestIdentities)
     .then(responseIdentities => {
       if (batch.length !== responseIdentities.length) {
-        throw new Error('Length mismatch')
+        throw new Error('Length mismatch');
       }
       // Releasing concurrent requests count
-      delete identityRequests[requestId]
+      delete identityRequests[requestId];
       // Stats
-      statsd.increment('hub.identities.response.success')
-      statsd.timing('hub.identities.response.success', process.hrtime(start)[1] / 1000000)
+      statsd.increment('hub.identities.response.success');
+      statsd.timing('hub.identities.response.success', process.hrtime(start)[1] / 1000000);
       batch.forEach((batchEntry, i) => {
-        const identityMap = fromJS(responseIdentities[i])
-        cache.set(batchEntry.key, identityMap)
-        batchEntry.promises.forEach(({resolve}) => {
-          resolve(identityMap.size ? identityMap : null)
-        })
-      })
+        const identityMap = fromJS(responseIdentities[i]);
+        cache.set(batchEntry.key, identityMap);
+        batchEntry.promises.forEach(({ resolve }) => {
+          resolve(identityMap.size ? identityMap : null);
+        });
+      });
     })
-    .catch((err) => {
-      console.error('identities', err)
+    .catch(err => {
+      console.error('identities', err);
       // Releasing concurrent requests count
-      delete identityRequests[requestId]
+      delete identityRequests[requestId];
       // Stats
-      statsd.increment('hub.identities.response.exception')
-      statsd.timing('hub.identities.response.exception', process.hrtime(start)[1] / 1000000)
+      statsd.increment('hub.identities.response.exception');
+      statsd.timing('hub.identities.response.exception', process.hrtime(start)[1] / 1000000);
       // Resolving all the requests with an empty response
       batch.forEach(batchEntry => {
-        batchEntry.promises.forEach(({resolve}) => {
-          resolve()
-        })
-      })
-    })
+        batchEntry.promises.forEach(({ resolve }) => {
+          resolve();
+        });
+      });
+    });
 }
 
-function getIdentities (identities) {
-  return client
-    .post('/identities', {identities})
-    .then(response => {
-      if (typeof response.data !== 'object') {
-        throw new TypeError('Response not an object')
-      }
-      if (!response.data.identities || !Array.isArray(response.data.identities)) {
-        throw new TypeError('Response identities not an array')
-      }
-      return response.data.identities
-    })
+function getIdentities(identities) {
+  return client.post('/identities', { identities }).then(response => {
+    if (typeof response.data !== 'object') {
+      throw new TypeError('Response not an object');
+    }
+    if (!response.data.identities || !Array.isArray(response.data.identities)) {
+      throw new TypeError('Response identities not an array');
+    }
+    return response.data.identities;
+  });
 }
 
-let activityBuffer = Map()
+let activityBuffer = Map();
 
-const activityRequests = {}
-
-const activityMaxConcurrentRequests = 2
+const activityRequests = {};
 
 const types = {
   '/robots.txt': 'robot',
@@ -169,108 +169,124 @@ const types = {
   '.jpg': 'img',
   '.svg': 'svg',
   '.css': 'css',
-  '.js': 'js'
-}
+  '.js': 'js',
+};
 
-function detectType (url) {
-  let type = 'mixed'
+function detectType(url) {
+  let type = 'mixed';
 
   Object.keys(types).some(key => {
     if (url.slice(key.length * -1) === key) {
-      type = types[key]
-      return true
+      type = types[key];
+      return true;
     }
-  })
+  });
 
-  return type
+  return type;
 }
 
-function activityFeedback (log) {
-  const activityBufferCount = activityBuffer.size
+function activityFeedback(log) {
+  const activityBufferCount = activityBuffer.size;
   if (activityBufferCount >= 100) {
-    console.log('Activity feedback buffer full. Skipping.', activityBufferCount)
+    console.log(
+      'Activity feedback buffer full. Skipping.',
+      activityBufferCount
+    );
+    return;
   }
 
   // Get identity id
-  let identityId = log.getIn(['identity', 'id'])
+  let identityId = log.getIn(['identity', 'id']);
   if (!identityId) {
     identityId = signature.getIdentityId({
-      address: log.getIn(['address', 'value'], log.getIn(['request', 'address'])),
-      headers: log.getIn(['request', 'headers']).toJS()
-    })
+      address: log.getIn(
+        ['address', 'value'],
+        log.getIn(['request', 'address'])
+      ),
+      headers: log.getIn(['request', 'headers']).toJS(),
+    });
   }
 
   // Get host
-  let host = log.getIn(['request', 'headers', 'host'])
+  let host = log.getIn(['request', 'headers', 'host']);
   if (!host) {
-    return
+    return;
   }
   if (host.indexOf(':') !== -1) {
-    [host] = host.split(':')
+    [host] = host.split(':');
   }
 
   const values = [
     log.getIn(['request', 'method']).toLowerCase(),
-    detectType(log.getIn(['request', 'url']))
-  ]
+    detectType(log.getIn(['request', 'url'])),
+  ];
   values.forEach(value => {
     if (value) {
-      activityBuffer = activityBuffer.updateIn([identityId, host, value], 0, n => n + 1)
+      activityBuffer = activityBuffer.updateIn(
+        [identityId, host, value],
+        0,
+        n => n + 1
+      );
     }
-  })
+  });
 }
 
-function batchIdentityFeedback () {
+function batchActivityFeedback() {
   if (activityBuffer.size === 0) {
-    return
+    return;
   }
 
-  const countCurrentRequests = Object.keys(activityRequests).length
-  if (countCurrentRequests >= activityMaxConcurrentRequests) {
-    console.log('Max concurrent requests for activity feedback batch. Skipping.')
+  const countCurrentRequests = Object.keys(activityRequests).length;
+  if (countCurrentRequests >= config.hub.activity.maxConcurrentRequests) {
+    console.log('Max concurrent requests for activity feedback. Skipping.');
+    return;
   }
 
-  const activity = activityBuffer.toJS()
-  activityBuffer = activityBuffer.clear()
+  const activity = activityBuffer.toJS();
+  activityBuffer = activityBuffer.clear();
 
-  const requestId = uuid()
-  const start = process.hrtime()
+  const requestId = uuid();
+  const start = process.hrtime();
 
   activityRequests[requestId] = client
-    .post('/activity', {activity})
+    .post('/activity', { activity })
     .then(response => {
       if (typeof response.data !== 'object') {
-        throw new TypeError('Response not an object')
+        throw new TypeError('Response not an object');
       }
-      if (!response.data.identities || !Array.isArray(response.data.identities)) {
-        throw new TypeError('Response identities not an array')
+      if (
+        !response.data.identities ||
+        !Array.isArray(response.data.identities)
+      ) {
+        throw new TypeError('Response identities not an array');
       }
       // Releasing concurrent requests count
-      delete activityRequests[requestId]
+      delete activityRequests[requestId];
       // Stats
-      statsd.increment('hub.activity.response.success')
-      statsd.timing('hub.activity.response.success', process.hrtime(start)[1] / 1000000)
+      statsd.increment('hub.activity.response.success');
+      statsd.timing('hub.activity.response.success', process.hrtime(start)[1] / 1000000);
       response.data.identities.forEach(identity => {
-        const identityMap = fromJS(identity)
-        const cachedMap = cache.get(identity.id)
+        const identityMap = fromJS(identity);
+        const cachedMap = cache.get(identity.id);
         if (!is(cachedMap, identityMap)) {
-          cache.set(identity.id, identityMap)
+          cache.set(identity.id, identityMap);
         }
-      })
+      });
     })
     .catch(err => {
-      console.error('activity feedback', err)
+      console.error('activity feedback', err);
       // Releasing concurrent requests count
+      delete activityRequests[requestId];
       // Stats
-      statsd.increment('hub.activity.response.exception')
-      statsd.timing('hub.activity.response.exception', process.hrtime(start)[1] / 1000000)
-    })
+      statsd.increment('hub.activity.response.exception');
+      statsd.timing('hub.activity.response.exception', process.hrtime(start)[1] / 1000000);
+    });
 }
 
-setInterval(batchIdentityFetch, 333)
+setInterval(batchIdentityFetch, config.hub.identity.batchInterval);
 
-setInterval(batchIdentityFeedback, 333)
+setInterval(batchActivityFeedback, config.hub.activity.batchInterval);
 
 module.exports = {
-  augment
-}
+  augment,
+};

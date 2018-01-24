@@ -1,4 +1,5 @@
 const omit = require('lodash.omit');
+const { Map, List } = require('immutable');
 const config = require('../constants');
 const { logIsAugmented } = require('../lib/util');
 
@@ -11,39 +12,50 @@ const logMatchesQuery = (log, query) =>
 const DEFAULT_LIMIT = 50;
 const memoryIndexFactory = limit => ({
   limit,
-  collection: {},
+  collection: new Map(),
   total: 0,
   removeOldest() {
-    const allTimes = this.getAllIndexTimes();
-    if (allTimes.length > 0) {
-      const oldestTime = allTimes[allTimes.length - 1];
-      this.collection[oldestTime].pop();
+    const oldestIndex = this.getOldestIndex();
+    if (oldestIndex) {
+      const newIndex = this.collection.get(oldestIndex).pop();
       this.total--;
-      if (this.collection[oldestTime].length === 0) {
-        delete this.collection[oldestTime];
+      if (newIndex.size === 0) {
+        this.collection = this.collection.delete(oldestIndex);
+      } else {
+        this.collection = this.collection.set(oldestIndex, newIndex);
       }
     }
   },
   push(time, log) {
     while (this.total >= this.limit && this.total !== 0) {
+      if (time < this.getOldestIndex()) {
+        return;
+      }
       this.removeOldest();
     }
     if (this.limit === 0) {
       return;
     }
-    if (!this.collection[time]) {
-      this.collection[time] = [];
+    if (!this.collection.has(time)) {
+      this.collection = this.collection.set(time, new List().push(log));
+    } else {
+      const newIndex = this.collection.get(time).unshift(log);
+      this.collection = this.collection.set(time, newIndex);
     }
-    this.collection[time].unshift(log);
     this.total++;
   },
   get(time) {
-    return this.collection[time];
+    return this.collection.get(time);
   },
   getAllIndexTimes() {
-    return Object.keys(this.collection)
-      .map(k => parseInt(k, 10))
+    return this.collection
+      .keySeq()
+      .toArray()
       .sort((a, b) => b - a);
+  },
+  getOldestIndex() {
+    const indexes = this.getAllIndexTimes();
+    return indexes[indexes.length - 1];
   },
 });
 
@@ -73,7 +85,7 @@ function searchLogs(args = {}) {
   searchTimes.some(t => {
     const timeIndex = memoryIndex.get(t);
     answer = answer.concat(
-      timeIndex.filter(log => logMatchesQuery(log, filters))
+      timeIndex.filter(log => logMatchesQuery(log, filters)).toArray()
     );
     return answer.length >= limit;
   });

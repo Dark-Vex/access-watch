@@ -14,18 +14,20 @@ const memoryIndexFactory = limit => ({
   collection: {},
   total: 0,
   removeOldest() {
-    const allTimes = this.getAllIndexTimes();
-    if (allTimes.length > 0) {
-      const oldestTime = allTimes[allTimes.length - 1];
-      this.collection[oldestTime].pop();
+    const oldestIndex = this.getOldestIndex();
+    if (oldestIndex) {
+      this.collection[oldestIndex].pop();
       this.total--;
-      if (this.collection[oldestTime].length === 0) {
-        delete this.collection[oldestTime];
+      if (this.collection[oldestIndex].length === 0) {
+        delete this.collection[oldestIndex];
       }
     }
   },
   push(time, log) {
     while (this.total >= this.limit && this.total !== 0) {
+      if (time < this.getOldestIndex()) {
+        return;
+      }
       this.removeOldest();
     }
     if (this.limit === 0) {
@@ -44,6 +46,10 @@ const memoryIndexFactory = limit => ({
     return Object.keys(this.collection)
       .map(k => parseInt(k, 10))
       .sort((a, b) => b - a);
+  },
+  getOldestIndex() {
+    const indexes = this.getAllIndexTimes();
+    return indexes[indexes.length - 1];
   },
 });
 

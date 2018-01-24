@@ -30,6 +30,15 @@ describe('memoryIndex', () => {
     memoryIndex.push(2, 'test4');
     assert(memoryIndex.get(1).length === 1);
   });
+  it('does not index a log if it is older than the oldest index', () => {
+    const memoryIndex = memoryIndexFactory(1);
+    memoryIndex.push(1, 'old');
+    memoryIndex.push(2, 'new');
+    memoryIndex.push(1, 'old');
+    assert.deepEqual(memoryIndex.getAllIndexTimes(), [2]);
+    assert(memoryIndex.total === 1);
+    assert(memoryIndex.get(2)[0] === 'new');
+  });
 });
 
 const fakeLogs = [

@@ -1,0 +1,12 @@
+{
+  "request": {
+    "method": ["GET", "PUT", "POST", "DELETE"],
+    "url": ["http://localhost"],
+    "headers": {
+      "user-agent": ["Chrome", "Firefox", "Safari"]
+    }
+  },
+  "response": {
+    "status": [200, 404, 500]
+  }
+}
